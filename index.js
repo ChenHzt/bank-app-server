@@ -12,7 +12,7 @@ const userRouter = require("./routers/users.js");
 
 app.use(express.json());
 app.use(cors());
-app.use("/api",userRouter);
+app.use(userRouter);
 
 // app.get("*", (req, res) => {
 //   console.log(req);
