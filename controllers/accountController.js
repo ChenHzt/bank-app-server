@@ -3,8 +3,8 @@ const { TransactionLog } = require('../models/transactionLogModel');
 
 const createAccount = async (req, res) => {
     try {
-        const account = new Account({owner:req.body.owner});
-        
+        const account = new Account({ owner: req.user });
+
         await account.save();
         res.status(201).send(account);
     }
@@ -13,6 +13,15 @@ const createAccount = async (req, res) => {
     }
 }
 
+
+const getUserAccounts = async (req, res) => {
+    try {
+        await req.user.populate('accounts').execPopulate()
+        res.send(req.user.accounts)
+    } catch (e) {
+        res.status(500).send()
+    }
+}
 
 const getAccountDetails = async (req, res) => {
     const _id = req.params.id;
@@ -28,14 +37,19 @@ const getAccountDetails = async (req, res) => {
 }
 
 const makeDeposit = async (req, res) => {
-    
+
     try {
-        if (!req.body.amount || req.body.amount < 0) 
+        if (!req.body.amount || req.body.amount < 0)
             throw new Error('must enter positive amount for depositing')
-        const {accountid } = req.params;
-        await Account.updateOne({_id :accountid}, {$inc : {'cash' : req.body.amount}})
-        const account = await Account.findById(accountid)       
-        const newTransaction = new TransactionLog({actionType:'deposit',amount:req.body.amount,account:account._id});
+        const { accountid } = req.params;
+
+        const account = await Account.findOne({ _id: accountid, owner: req.user._id });
+        if (!account)
+            throw new Error('account not found')
+        account.cash += req.body.amount;
+        await account.save();
+
+        const newTransaction = new TransactionLog({ actionType: 'deposit', amount: req.body.amount, account: account._id });
         newTransaction.save();
         return res.status(201).send(account);
     }
@@ -47,11 +61,15 @@ const makeDeposit = async (req, res) => {
 
 const updateCredit = async (req, res) => {
     try {
-        if (!req.body.amount || req.body.amount < 0) 
+        if (!req.body.amount || req.body.amount < 0)
             throw new Error('must enter positive amount for credit')
-        const {accountid } = req.params;
-        await Account.updateOne({_id :accountid}, {'credit' : req.body.amount})
-        const account = await Account.findById(accountid)        
+        const { accountid } = req.params;
+        const account = await Account.findOne({ _id: accountid, owner: req.user._id });
+        if (!account)
+            throw new Error('account not found')
+        account.credit = req.body.amount;
+        await account.save();
+
         return res.status(201).send(account);
     }
     catch (e) {
@@ -63,19 +81,24 @@ const updateCredit = async (req, res) => {
 const withdraw = async (req, res) => {
 
     try {
-        if (!req.body.amount || req.body.amount < 0) 
+        if (!req.body.amount || req.body.amount < 0)
             throw new Error('must enter positive amount to withdraw')
-        const {accountid } = req.params;
+        const { accountid } = req.params;
 
-        const account = await Account.findById(accountid);
-        if(account.cash - req.body.amount < account.credit * -1)
-            throw new Error(`can't allow the withrdawal. cash and credit run out`)    
-        
-        await Account.updateOne({_id :accountid}, {$inc : {'cash' : req.body.amount * (-1)}})
-        const updatedAccount = await Account.findById(accountid)        
-        const newTransaction = new TransactionLog({actionType:'withdraw',amount:req.body.amount,account:account._id});
+        const account = await Account.findOne({ _id: accountid, owner: req.user._id });
+        if (!account)
+            throw new Error('account not found')
+
+        if (account.cash - req.body.amount < account.credit * -1)
+            throw new Error(`can't allow the withrdawal. cash and credit run out`)
+
+
+        account.cash -= req.body.amount;
+        await account.save();
+       
+        const newTransaction = new TransactionLog({ actionType: 'withdraw', amount: req.body.amount, account: account._id });
         newTransaction.save();
-        return res.status(201).send(updatedAccount);
+        return res.status(201).send(account);
     }
     catch (e) {
         return res.status(400).send({ error: e.message });
@@ -85,28 +108,31 @@ const withdraw = async (req, res) => {
 
 const transfer = async (req, res) => {
     try {
-        if (!req.body.amount || req.body.amount < 0) 
+        if (!req.body.amount || req.body.amount < 0)
             throw new Error('must enter positive amount to transfer')
-        const {idFrom } = req.params;
-        const {idTo } = req.params;
+        const { idFrom } = req.params;
+        const { idTo } = req.params;
 
-        const fromAccount = await Account.findById(idFrom);
+        const fromAccount = await Account.findOne({ _id: idFrom, owner: req.user._id });
         const toAccount = await Account.findById(idTo);
-        if(fromAccount.cash - req.body.amount < fromAccount.credit * -1)
-            throw new Error(`can't allow the withrdawal. cash and credit run out`)    
+
+        if(!fromAccount || !toAccount)
+            throw new Error('account not found');
+    
+        if (fromAccount.cash - req.body.amount < fromAccount.credit * -1)
+            throw new Error(`can't allow the withrdawal. cash and credit run out`)
+
+        fromAccount.cash -= req.body.amount;    
+        toAccount.cash += req.body.amount;    
         
-        await Account.updateOne({_id :fromAccount}, {$inc : {'cash' : req.body.amount * (-1)}})
-        await Account.updateOne({_id :toAccount}, {$inc : {'cash' : req.body.amount }})
-        const updatedFromAccount = await Account.findById(idFrom);
-        const updatedToAccount = await Account.findById(idTo);
-        const newTransactionTransfer = new TransactionLog({actionType:'transfer',amount:req.body.amount,account:fromAccount._id});
+        const newTransactionTransfer = new TransactionLog({ actionType: 'transfer', amount: req.body.amount, account: fromAccount._id });
         newTransactionTransfer.save();
-        const newTransactionRecive = new TransactionLog({actionType:'recive',amount:req.body.amount,account:toAccount._id});
-        newTransactionRecive.save();
-        return res.status(201).send({from:updatedFromAccount,to:updatedToAccount});
+        const newTransactionReceive = new TransactionLog({ actionType: 'receive', amount: req.body.amount, account: toAccount._id });
+        newTransactionReceive.save();
+        return res.status(201).send({ from: fromAccount, to: toAccount });
     }
     catch (e) {
-        return res.status(400).send({ error: e.message});
+        return res.status(400).send({ error: e.message });
     }
 
 }
@@ -117,6 +143,7 @@ module.exports = {
     updateCredit,
     withdraw,
     transfer,
-    createAccount
-    
+    createAccount,
+    getUserAccounts
+
 }

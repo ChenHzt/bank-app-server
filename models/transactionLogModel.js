@@ -21,7 +21,8 @@ const TransactionLog = mongoose.model('TransactionLog', {
     },
     account:{
         type: mongoose.Schema.Types.ObjectId, 
-        ref: 'Account'
+        ref: 'Account',
+        require:true
     },
     info:{
         type:String,

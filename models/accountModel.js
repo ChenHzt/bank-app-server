@@ -1,6 +1,6 @@
 const mongoose = require('mongoose')
 
-const Account = mongoose.model('Account', {
+const accountSchema = new mongoose.Schema({
     cash: {
         type: Number,
         default:0,
@@ -15,6 +15,14 @@ const Account = mongoose.model('Account', {
         require:true
     }
 })
+
+accountSchema.virtual('transactions', {
+    ref: 'TransactionLog',
+    localField: '_id',
+    foreignField: 'account'
+});
+
+const Account = mongoose.model('Account', accountSchema);
 
 module.exports = {
     Account

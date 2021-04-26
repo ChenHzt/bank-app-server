@@ -9,13 +9,39 @@ const createUser = async (req, res) => {
         const account = new Account({owner:newUser._id});
         
         await newUser.save();
+        const token = await newUser.generateAuthToken()
+
         await account.save();
-        res.status(201).send(newUser);
+        res.status(201).send({newUser,token});
     }
     catch (e) {
         res.status(400).send(e);
     }
 }
+
+const login = async (req, res) => {
+    try {
+        const user = await User.findByCredentials(req.body.email,req.body.passportId, req.body.password)
+        const token = await user.generateAuthToken()
+        res.send({ user, token })
+    } catch (e) {
+        res.status(400).send()
+    }
+}
+
+const logout = async (req, res) => {
+    try {
+        req.user.tokens = req.user.tokens.filter((token) => {
+            return token.token !== req.token
+        })
+        await req.user.save()
+
+        res.send()
+    } catch (e) {
+        res.status(500).send()
+    }
+}
+
 
 
 const getUsers = async (req, res) => {
@@ -30,22 +56,20 @@ const getUsers = async (req, res) => {
 }
 
 const getUserDetails = async (req, res) => {
-    const _id = req.params.id;
-    try {
-        const user = await User.findById(_id);
-        if (!user) {
-            return res.status(404).send({ error: "No user found" });
-        }
-        const accounts = await Account.find({owner:_id});
-        res.send({user,accounts});
-    } catch (e) {
-        res.status(500).send();
-    }
+    console.log("dddddddddddddd");
+    res.send(req.user)
+}
+
+const getUserLoggedIn = async (req, res) => {
+    res.send(req.user)
 }
 
 module.exports = {
     createUser,
     getUsers,
     getUserDetails,
+    getUserLoggedIn,
+    login,
+    logout
     
 }
